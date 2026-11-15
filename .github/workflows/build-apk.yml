@@ -58,6 +58,7 @@ jobs:
           }
           dependencies {
               implementation 'org.videolan.android:libvlc-all:3.5.1'
+              implementation 'com.github.luben:zstd-jni:1.5.6-3@aar'
           }
           EOF2
           cp overlay/MainActivity.java android/app/src/main/java/com/tem/minerador/MainActivity.java
