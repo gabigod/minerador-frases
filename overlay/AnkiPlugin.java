@@ -191,6 +191,37 @@ public class AnkiPlugin extends Plugin {
         return out;
     }
 
+    /** como idsFor, mas devolve null se o AnkiDroid nao aceitar a busca */
+    private JSArray idsOrNull(ContentResolver cr, String search) {
+        Cursor c = null;
+        try {
+            c = cr.query(uri("notes"), new String[] { "_id" }, search, null, null);
+            JSArray out = new JSArray();
+            if (c != null) {
+                while (c.moveToNext()) out.put(String.valueOf(c.getLong(0)));
+            }
+            return out;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (c != null) c.close();
+        }
+    }
+
+    /** tenta as buscas em ordem; usa a primeira que o AnkiDroid aceitar e que achar alguma coisa */
+    private void firstOk(ContentResolver cr, JSObject r, String key, String[] qs) {
+        for (int i = 0; i < qs.length; i++) {
+            JSArray a = idsOrNull(cr, qs[i]);
+            if (a != null && (a.length() > 0 || i == qs.length - 1)) {
+                r.put(key, a);
+                r.put(key + "Q", qs[i]);
+                return;
+            }
+        }
+        r.put(key, new JSArray());
+        r.put(key + "Q", "");
+    }
+
     /** Palavras alvo de todas as notas que tem o campo pedido, mais quais estao maduras e quais foram erradas. */
     @PluginMethod
     public void words(final PluginCall call) {
@@ -262,6 +293,14 @@ public class AnkiPlugin extends Plugin {
                 r.put("sents", sents);
                 r.put("mature", idsFor(cr, "prop:ivl>=" + matureDays));
                 r.put("again", idsFor(cr, "rated:" + againDays + ":1"));
+                /* palavras seguras para montar frases: o FSRS diz que voce lembra hoje, sem erro recente, sem muita dificuldade */
+                firstOk(cr, r, "safe", new String[] {
+                    "-is:new -is:suspended prop:r>=0.9 prop:d<0.7 prop:lapses<=3 -rated:14:1",
+                    "-is:new -is:suspended prop:ivl>=" + matureDays + " prop:lapses<=3 -rated:14:1" });
+                /* cartoes firmes o bastante para ganhar frase da IA: estabilidade (FSRS) alta e sem erro recente */
+                firstOk(cr, r, "strong", new String[] {
+                    "-is:new prop:s>=21 -rated:14:1",
+                    "-is:new prop:ivl>=21 -rated:14:1" });
                 r.put("models", idx.size());
                 call.resolve(r);
             }
