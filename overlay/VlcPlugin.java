@@ -190,6 +190,7 @@ public class VlcPlugin extends Plugin {
     public void open(PluginCall call) {
         final String s = call.getString("uri");
         final double at = call.getDouble("at", 0.0);
+        final int atrack = call.getInt("atrack", -1);
         if (s == null) {
             call.reject("sem arquivo");
             return;
@@ -214,6 +215,7 @@ public class VlcPlugin extends Plugin {
                 Media m = new Media(lib(), pfd.getFileDescriptor());
                 m.addOption(":audio-language=kor,ko,kr");
                 if (at > 0) m.addOption(":start-time=" + String.format(Locale.US, "%.3f", at));
+                if (atrack >= 0) m.addOption(":audio-track=" + atrack);
                 mp.setMedia(m);
                 m.release();
                 vw = 0;
@@ -297,6 +299,32 @@ public class VlcPlugin extends Plugin {
                 }
             }
             call.resolve();
+        });
+    }
+
+    /** troca a faixa de audio (0 = primeira faixa de audio do arquivo) */
+    @PluginMethod
+    public void audioTrack(PluginCall call) {
+        final int i = call.getInt("i", 0);
+        main.post(() -> {
+            try {
+                if (mp == null) throw new Exception("sem video");
+                MediaPlayer.TrackDescription[] ts = mp.getAudioTracks();
+                if (ts == null) throw new Exception("sem faixas");
+                int k = 0;
+                for (MediaPlayer.TrackDescription t : ts) {
+                    if (t.id < 0) continue;
+                    if (k == i) {
+                        mp.setAudioTrack(t.id);
+                        call.resolve();
+                        return;
+                    }
+                    k++;
+                }
+                throw new Exception("faixa nao encontrada");
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
         });
     }
 
