@@ -494,6 +494,109 @@ public class VlcPlugin extends Plugin {
         }).start();
     }
 
+    /** converte so o audio do arquivo (qualquer formato) para WAV 22050 Hz mono, para tocar junto do video no reprodutor normal */
+    private volatile boolean xStop = false;
+
+    @PluginMethod
+    public void extractAudio(PluginCall call) {
+        final String s = call.getString("uri");
+        final String key = call.getString("key", "audio");
+        final int track = call.getInt("track", -1);
+        if (s == null) {
+            call.reject("sem arquivo");
+            return;
+        }
+        xStop = false;
+        new Thread(() -> {
+            ParcelFileDescriptor f = null;
+            MediaPlayer p = null;
+            File dir = new File(getContext().getFilesDir(), "audio");
+            dir.mkdirs();
+            String safe = key.replaceAll("[^A-Za-z0-9._-]", "_");
+            if (safe.length() > 90) safe = safe.substring(0, 90);
+            File out = new File(dir, safe + (track >= 0 ? "_t" + track : "") + ".wav");
+            File ok = new File(out.getAbsolutePath() + ".ok");
+            try {
+                if (out.exists() && ok.exists()) {
+                    JSObject r = new JSObject();
+                    r.put("path", out.getAbsolutePath());
+                    r.put("size", out.length());
+                    r.put("cached", true);
+                    call.resolve(r);
+                    return;
+                }
+                if (out.exists()) out.delete();
+                f = getContext().getContentResolver().openFileDescriptor(Uri.parse(s), "r");
+                Media m = new Media(lib(), f.getFileDescriptor());
+                if (track >= 0) m.addOption(":audio-track=" + track);
+                else m.addOption(":audio-language=kor,ko,kr");
+                m.addOption(":no-sout-video");
+                m.addOption(":no-sout-spu");
+                m.addOption(":sout=#transcode{vcodec=none,scodec=none,acodec=s16l,channels=1,samplerate=22050}:std{access=file,mux=wav,dst=" + out.getAbsolutePath() + "}");
+                m.addOption(":sout-keep");
+                p = new MediaPlayer(lib());
+                p.setMedia(m);
+                m.release();
+                final Object lock = new Object();
+                final boolean[] done = { false, false };
+                final MediaPlayer pp = p;
+                p.setEventListener(ev -> {
+                    if (ev.type == MediaPlayer.Event.EndReached || ev.type == MediaPlayer.Event.Stopped || ev.type == MediaPlayer.Event.EncounteredError) {
+                        synchronized (lock) {
+                            done[0] = true;
+                            if (ev.type == MediaPlayer.Event.EncounteredError) done[1] = true;
+                            lock.notifyAll();
+                        }
+                    } else if (ev.type == MediaPlayer.Event.PositionChanged) {
+                        JSObject o = new JSObject();
+                        o.put("p", ev.getPositionChanged());
+                        notifyListeners("vlcx", o);
+                    }
+                });
+                p.play();
+                long last = System.currentTimeMillis(), lastLen = 0;
+                synchronized (lock) {
+                    while (!done[0] && !xStop) {
+                        lock.wait(1000);
+                        long len = out.length();
+                        if (len != lastLen) {
+                            lastLen = len;
+                            last = System.currentTimeMillis();
+                        } else if (System.currentTimeMillis() - last > 60000) break; // travou
+                    }
+                }
+                p.stop();
+                if (xStop) throw new Exception("cancelado");
+                if (done[1] || !out.exists() || out.length() < 4000) throw new Exception("o VLC nao conseguiu converter o audio");
+                ok.createNewFile();
+                JSObject r = new JSObject();
+                r.put("path", out.getAbsolutePath());
+                r.put("size", out.length());
+                call.resolve(r);
+            } catch (Exception e) {
+                if (!ok.exists()) out.delete();
+                call.reject(String.valueOf(e.getMessage()));
+            } finally {
+                try {
+                    if (p != null) p.release();
+                } catch (Exception e) {
+                    // ignora
+                }
+                try {
+                    if (f != null) f.close();
+                } catch (Exception e) {
+                    // ignora
+                }
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void extractStop(PluginCall call) {
+        xStop = true;
+        call.resolve();
+    }
+
     private void closeNow() {
         try {
             if (mp != null) {
