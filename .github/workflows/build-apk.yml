@@ -65,6 +65,7 @@ jobs:
           cp overlay/AnkiPlugin.java android/app/src/main/java/com/tem/minerador/AnkiPlugin.java
           cp overlay/VlcPlugin.java android/app/src/main/java/com/tem/minerador/VlcPlugin.java
           cp overlay/FilesPlugin.java android/app/src/main/java/com/tem/minerador/FilesPlugin.java
+          if [ -d overlay/res ]; then cp -r overlay/res/. android/app/src/main/res/; fi
           sed -i 's/<application/<application android:usesCleartextTraffic="true" android:requestLegacyExternalStorage="true"/' android/app/src/main/AndroidManifest.xml
           sed -i 's#<!-- Permissions -->#<uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <queries><package android:name="com.ichi2.anki" /></queries>#' android/app/src/main/AndroidManifest.xml
           grep -q "com.ichi2.anki.permission.READ_WRITE_DATABASE" android/app/src/main/AndroidManifest.xml
