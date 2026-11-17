@@ -14,7 +14,7 @@
     catch(e){ console.warn('anki rpc',m[1],e); return new Response(String(e&&e.message||e),{status:500}) } };
   window.alert=function(m){ P.akWebAlert(m) }; window.confirm=function(m){ return P.akWebConfirm(m) };
   window.bridgeCommand=function(c){ P.akWebBridge(c) };
-  var st=document.createElement('style'); st.textContent='html,body{background:#1c1c1c;font-family:Roboto,'Noto Sans',system-ui,sans-serif}';
+  var st=document.createElement('style'); st.textContent='html,body{background:#1c1c1c;font-family:Roboto,\'Noto Sans\',system-ui,sans-serif}';
   document.head.appendChild(st);
 })();
 </script>
