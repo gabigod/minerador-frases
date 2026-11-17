@@ -42,6 +42,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 /**
  * Reprodutor VLC de reserva: so e usado quando o reprodutor do sistema nao toca o video.
@@ -61,6 +63,24 @@ public class VlcPlugin extends Plugin {
 
     @Override
     public void load() {
+        /* registro do que o VLC estava fazendo: se o app fechar sozinho, na proxima abertura da para ver onde foi */
+        try {
+            final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+            Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+                try {
+                    StringWriter sw = new StringWriter();
+                    e.printStackTrace(new PrintWriter(sw));
+                    String tr = sw.toString();
+                    if (tr.length() > 4000) tr = tr.substring(0, 4000);
+                    cr().edit().putString("trace", tr).commit();
+                } catch (Exception x) {
+                    // ignora
+                }
+                if (prev != null) prev.uncaughtException(t, e);
+            });
+        } catch (Exception e) {
+            // ignora
+        }
         /* guarda o endereco de cada arquivo escolhido no app, para o VLC abrir sem pedir de novo */
         main.post(() -> {
             try {
@@ -82,6 +102,50 @@ public class VlcPlugin extends Plugin {
                 // sem isso o VLC pede para escolher o arquivo de novo
             }
         });
+    }
+
+    private SharedPreferences cr() {
+        return getContext().getSharedPreferences("vlc-crash", Context.MODE_PRIVATE);
+    }
+
+    private synchronized void crumb(String s) {
+        try {
+            String old = cr().getString("crumbs", "");
+            String line = new java.text.SimpleDateFormat("HH:mm:ss", Locale.US).format(new java.util.Date()) + " " + s;
+            String all = old.isEmpty() ? line : old + "\n" + line;
+            String[] ls = all.split("\n");
+            if (ls.length > 18) {
+                StringBuilder b = new StringBuilder();
+                for (int i = ls.length - 18; i < ls.length; i++) {
+                    if (b.length() > 0) b.append("\n");
+                    b.append(ls[i]);
+                }
+                all = b.toString();
+            }
+            cr().edit().putString("crumbs", all).commit();
+        } catch (Exception e) {
+            // ignora
+        }
+    }
+
+    private void active(boolean on) {
+        try {
+            cr().edit().putBoolean("active", on).commit();
+        } catch (Exception e) {
+            // ignora
+        }
+    }
+
+    /** o que aconteceu da ultima vez (e limpa) */
+    @PluginMethod
+    public void lastCrash(PluginCall call) {
+        SharedPreferences p = cr();
+        JSObject r = new JSObject();
+        r.put("active", p.getBoolean("active", false));
+        r.put("crumbs", p.getString("crumbs", ""));
+        r.put("trace", p.getString("trace", ""));
+        p.edit().putBoolean("active", false).remove("trace").putString("crumbs", "").commit();
+        call.resolve(r);
     }
 
     private SharedPreferences sp() {
@@ -198,6 +262,7 @@ public class VlcPlugin extends Plugin {
         main.post(() -> {
             try {
                 closeNow();
+                crumb("abrir " + s.replaceAll(".*/", "") + " em " + Math.round(at) + "s faixa " + atrack);
                 Uri u = Uri.parse(s);
                 pfd = getContext().getContentResolver().openFileDescriptor(u, "r");
                 if (pfd == null) throw new Exception("nao consegui abrir o arquivo");
@@ -241,6 +306,7 @@ public class VlcPlugin extends Plugin {
                             emit("ended", null);
                             break;
                         case MediaPlayer.Event.EncounteredError:
+                            crumb("erro do VLC ao tocar");
                             emit("error", null);
                             break;
                         case MediaPlayer.Event.Vout:
@@ -262,8 +328,11 @@ public class VlcPlugin extends Plugin {
                     }
                 });
                 mp.play();
+                active(true);
+                crumb("tocando");
                 call.resolve();
             } catch (Exception e) {
+                crumb("falhou ao abrir: " + e.getMessage());
                 closeNow();
                 call.reject("VLC: " + e.getMessage());
             }
@@ -309,6 +378,7 @@ public class VlcPlugin extends Plugin {
         main.post(() -> {
             try {
                 if (mp == null) throw new Exception("sem video");
+                crumb("trocar faixa de audio " + i);
                 MediaPlayer.TrackDescription[] ts = mp.getAudioTracks();
                 if (ts == null) throw new Exception("sem faixas");
                 int k = 0;
@@ -526,6 +596,7 @@ public class VlcPlugin extends Plugin {
                     return;
                 }
                 if (out.exists()) out.delete();
+                crumb("converter audio faixa " + track);
                 f = getContext().getContentResolver().openFileDescriptor(Uri.parse(s), "r");
                 Media m = new Media(lib(), f.getFileDescriptor());
                 if (track >= 0) m.addOption(":audio-track=" + track);
@@ -598,6 +669,8 @@ public class VlcPlugin extends Plugin {
     }
 
     private void closeNow() {
+        if (mp != null) crumb("fechar");
+        active(false);
         try {
             if (mp != null) {
                 mp.setEventListener(null);
