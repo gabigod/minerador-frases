@@ -7,6 +7,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
+import android.provider.MediaStore;
+import android.content.ContentUris;
+import android.database.Cursor;
 import android.util.Base64;
 
 import androidx.core.app.ActivityCompat;
@@ -153,6 +156,33 @@ public class FilesPlugin extends Plugin {
             } catch (Exception e) {
                 call.reject(String.valueOf(e.getMessage()));
             }
+        }).start();
+    }
+
+    /** endereco content:// do arquivo na galeria do Android (o reprodutor do WebView abre igual a um arquivo escolhido) */
+    @PluginMethod
+    public void contentUri(final PluginCall call) {
+        final String path = call.getString("path");
+        new Thread(() -> {
+            JSObject r = new JSObject();
+            Cursor c = null;
+            try {
+                Uri base = MediaStore.Files.getContentUri("external");
+                c = getContext().getContentResolver().query(base, new String[] { MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.MEDIA_TYPE }, MediaStore.Files.FileColumns.DATA + "=?", new String[] { path }, null);
+                if (c != null && c.moveToFirst()) {
+                    long id = c.getLong(0);
+                    int mt = c.getInt(1);
+                    Uri u = mt == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO ? ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                        : mt == MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO ? ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                        : ContentUris.withAppendedId(base, id);
+                    r.put("uri", u.toString());
+                }
+            } catch (Exception e) {
+                r.put("error", String.valueOf(e.getMessage()));
+            } finally {
+                if (c != null) c.close();
+            }
+            call.resolve(r);
         }).start();
     }
 
