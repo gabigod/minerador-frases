@@ -2,7 +2,7 @@ name: Gerar APK
 
 on:
   push:
-    branches: [main, master]
+    branches: ['**']
   workflow_dispatch:
 
 jobs:
@@ -23,6 +23,44 @@ jobs:
 
       - name: Instalar dependencias
         run: npm ci
+
+
+      - name: Adicionar gestos na tela de revisao
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("www/index.html")
+          s = p.read_text(encoding="utf-8")
+          marker = "init().catch(e=>{$('#load').innerHTML='<div><b>Erro ao carregar</b><br><small>'+String(e&&e.message||e)+'</small></div>'});\\n})();"
+          gesture = r"""
+          // Gestos na revisao: esquerda = De novo; direita = Bom.
+          (() => {
+            const area = document.getElementById('rvBody');
+            if (!area) throw new Error('Area de revisao #rvBody nao encontrada');
+            let start = null;
+            area.addEventListener('pointerdown', e => {
+              if (e.button !== 0 || e.target.closest('button,a,input,textarea,select')) { start = null; return; }
+              if (!RV.cur || !RV.shown || document.getElementById('rv').hidden) { start = null; return; }
+              start = { x: e.clientX, y: e.clientY, id: e.pointerId, card: RV.cur, at: Date.now() };
+            }, { passive: true });
+            area.addEventListener('pointerup', e => {
+              if (!start || e.pointerId !== start.id) return;
+              const dx = e.clientX - start.x, dy = e.clientY - start.y;
+              const valid = Math.abs(dx) >= 70 && Math.abs(dx) > Math.abs(dy) * 1.4 && Date.now() - start.at < 1500;
+              const card = start.card;
+              start = null;
+              if (!valid || !RV.shown || RV.cur !== card || document.getElementById('rv').hidden) return;
+              rvAnswer(dx > 0);
+            }, { passive: true });
+            area.addEventListener('pointercancel', () => { start = null; }, { passive: true });
+          })();
+          """
+          if marker not in s:
+              raise SystemExit("Nao encontrei o ponto seguro para inserir os gestos")
+          s = s.replace(marker, marker[:-len("\\n})();")] + "\\n" + gesture + "\\n})();", 1)
+          p.write_text(s, encoding="utf-8")
+          print("Gestos inseridos em www/index.html")
+          PY
 
       - name: Criar projeto Android
         run: npx cap add android
