@@ -57,7 +57,7 @@ jobs:
           """
           if needle not in s:
               raise SystemExit("Nao encontrei o ponto seguro para inserir os gestos")
-          s = s.replace(needle, needle + "\\n" + gesture, 1)
+          s = s.replace(needle, needle + "\n" + gesture, 1)
           p.write_text(s, encoding="utf-8")
           print("Gestos inseridos em www/index.html")
           PY
