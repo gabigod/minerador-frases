@@ -1,0 +1,142 @@
+name: Gerar APK com gestos
+
+on:
+  push:
+    branches: [gesture-swipe-build]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Aplicar gestos na revisao
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("www/index.html")
+          html = p.read_text(encoding="utf-8")
+          marker = "\n})();\n</script>"
+          if html.count(marker) != 1:
+              raise SystemExit(f"Esperava encontrar o fechamento do script uma vez; encontrados: {html.count(marker)}")
+          if "/* Revisao por gestos: esquerda = De novo, direita = Bom */" in html:
+              raise SystemExit("O patch de gestos ja existe; interrompendo para evitar duplicacao.")
+          patch = r"""
+          /* Revisao por gestos: esquerda = De novo, direita = Bom */
+          (function(){
+            let start = null;
+            const area = document.getElementById('rvBody');
+            if (!area) return;
+            area.addEventListener('pointerdown', function(e) {
+              if (e.button !== 0 || e.target.closest('button,a,input,textarea,select')) {
+                start = null;
+                return;
+              }
+              if (document.getElementById('rv').hidden || !RV.cur || !RV.shown) {
+                start = null;
+                return;
+              }
+              start = { x:e.clientX, y:e.clientY, t:Date.now(), id:e.pointerId };
+            }, { passive:true });
+            area.addEventListener('pointerup', function(e) {
+              if (!start || e.pointerId !== start.id) return;
+              const dx = e.clientX - start.x;
+              const dy = e.clientY - start.y;
+              const elapsed = Date.now() - start.t;
+              start = null;
+              if (document.getElementById('rv').hidden || !RV.cur || !RV.shown) return;
+              if (Math.abs(dx) >= 65 && Math.abs(dx) > Math.abs(dy) * 1.4 && elapsed < 1500) {
+                rvAnswer(dx > 0);
+              }
+            }, { passive:true });
+            area.addEventListener('pointercancel', function(){ start = null; }, { passive:true });
+          })();
+          """
+          html = html.replace(marker, "\n" + patch + marker, 1)
+          p.write_text(html, encoding="utf-8")
+          print("Gestos adicionados em www/index.html")
+          PY
+
+      - name: Criar projeto Android
+        run: npx cap add android
+
+      - name: Aplicar ajustes do app (tela cheia, AnkiDroid, versao, assinatura fixa)
+        run: |
+          test -f overlay/debug.keystore || { echo "::error::Falta overlay/debug.keystore"; exit 1; }
+          cp overlay/debug.keystore android/app/fixo.keystore
+          sed -i 's/versionCode 1$/versionCode 119/' android/app/build.gradle
+          sed -i 's/versionName "1.0"/versionName "1.119-gestos"/' android/app/build.gradle
+          grep -q "versionCode 119" android/app/build.gradle
+          cat >> android/app/build.gradle <<'EOF2'
+
+          android {
+              signingConfigs {
+                  fixo {
+                      storeFile file('fixo.keystore')
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }
+              }
+              buildTypes {
+                  debug { signingConfig signingConfigs.fixo }
+                  release { signingConfig signingConfigs.fixo }
+              }
+              defaultConfig {
+                  ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+              }
+              packagingOptions {
+                  jniLibs { useLegacyPackaging true }
+              }
+          }
+          dependencies {
+              implementation 'org.videolan.android:libvlc-all:3.5.1'
+          }
+          EOF2
+          cp overlay/MainActivity.java android/app/src/main/java/com/tem/minerador/MainActivity.java
+          cp overlay/AnkiPlugin.java android/app/src/main/java/com/tem/minerador/AnkiPlugin.java
+          cp overlay/VlcPlugin.java android/app/src/main/java/com/tem/minerador/VlcPlugin.java
+          if [ -d overlay/res ]; then cp -r overlay/res/. android/app/src/main/res/; fi
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          sed -i 's#<!-- Permissions -->#<uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE" />\n    <queries><package android:name="com.ichi2.anki" /></queries>#' android/app/src/main/AndroidManifest.xml
+          grep -q "com.ichi2.anki.permission.READ_WRITE_DATABASE" android/app/src/main/AndroidManifest.xml
+
+      - name: Copiar o app para o projeto
+        run: npx cap sync android
+
+      - name: Usar sempre a mesma assinatura
+        run: |
+          mkdir -p ~/.android
+          cp overlay/debug.keystore ~/.android/debug.keystore
+
+      - name: Compilar
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Conferir assinatura original
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee cert.txt
+          grep -qi "SHA-256 digest: 1ea6d3cb52a16ffb4b83b422d54a350db51fe05f501c1283c9b935f949010947" cert.txt || { echo "::error::Assinatura diferente da original"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Minerador-APK-v1.119-gestos
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
