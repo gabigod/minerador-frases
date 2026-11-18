@@ -31,7 +31,7 @@ jobs:
           from pathlib import Path
           p = Path("www/index.html")
           s = p.read_text(encoding="utf-8")
-          marker = "init().catch(e=>{$('#load').innerHTML='<div><b>Erro ao carregar</b><br><small>'+String(e&&e.message||e)+'</small></div>'});\\n})();"
+          marker = "init().catch(e=>{$('#load').innerHTML='<div><b>Erro ao carregar</b><br><small>'+String(e&&e.message||e)+'</small></div>'});\n})();"
           gesture = r"""
           // Gestos na revisao: esquerda = De novo; direita = Bom.
           (() => {
@@ -57,7 +57,7 @@ jobs:
           """
           if marker not in s:
               raise SystemExit("Nao encontrei o ponto seguro para inserir os gestos")
-          s = s.replace(marker, marker[:-len("\\n})();")] + "\\n" + gesture + "\\n})();", 1)
+          s = s.replace(marker, marker[:-len("\n})();")] + "\n" + gesture + "\n})();", 1)
           p.write_text(s, encoding="utf-8")
           print("Gestos inseridos em www/index.html")
           PY
