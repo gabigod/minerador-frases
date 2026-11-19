@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -79,8 +82,9 @@ jobs:
       - name: Compilar
         working-directory: android
         run: |
+          set -o pipefail
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee "$GITHUB_WORKSPACE/gradle.log"
 
       - name: Conferir a assinatura (tem que ser sempre a mesma)
         run: |
@@ -95,3 +99,28 @@ jobs:
           name: Minerador-APK-v2.0-build${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publicar o APK no ramo apk
+        if: success()
+        run: |
+          set -e
+          mkdir -p /tmp/pub && cd /tmp/pub
+          cp "$GITHUB_WORKSPACE/android/app/build/outputs/apk/debug/app-debug.apk" Minerador-v2.0.apk
+          printf 'status=ok\nsha=%s\nrun=%s\n' "${{ github.sha }}" "${{ github.run_number }}" > BUILD.txt
+          git init -q -b apk
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git add -A; git commit -q -m "APK da build ${{ github.run_number }} (${{ github.sha }})"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -q -f origin apk
+
+      - name: Publicar o relatorio da falha no ramo build-log
+        if: failure()
+        run: |
+          mkdir -p /tmp/pub && cd /tmp/pub
+          printf 'status=failed\nsha=%s\nrun=%s\n\n' "${{ github.sha }}" "${{ github.run_number }}" > BUILD.txt
+          if [ -f "$GITHUB_WORKSPACE/gradle.log" ]; then tail -n 120 "$GITHUB_WORKSPACE/gradle.log" >> BUILD.txt; else echo "(sem log do Gradle: a falha foi antes da compilacao)" >> BUILD.txt; fi
+          git init -q -b build-log
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git add -A; git commit -q -m "Falha na build ${{ github.run_number }} (${{ github.sha }})"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git push -q -f origin build-log
