@@ -3,5 +3,5 @@
   "appName": "Minerador de Frases",
   "webDir": "www",
   "android": { "allowMixedContent": false },
-  "backgroundColor": "#15122e"
+  "backgroundColor": "#000000"
 }
