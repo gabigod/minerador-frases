@@ -1,0 +1,5 @@
+status=failed
+sha=20e8471458158593f04a6d3aa453d7a75cf11560
+run=158
+
+(sem log do Gradle: a falha foi antes da compilacao)
