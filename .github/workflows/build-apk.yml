@@ -35,8 +35,8 @@ jobs:
           test -f overlay/debug.keystore || { echo "::error::Falta o arquivo overlay/debug.keystore no GitHub. Sem ele o app nao atualiza por cima."; exit 1; }
           cp overlay/debug.keystore android/app/fixo.keystore
           sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
-          sed -i "s/versionName \"1.0\"/versionName \"4.8\"/" android/app/build.gradle
-          grep -q 'versionName "4.8"' android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"4.9\"/" android/app/build.gradle
+          grep -q 'versionName "4.9"' android/app/build.gradle
           grep -q "versionCode ${{ github.run_number }}" android/app/build.gradle
           cat >> android/app/build.gradle <<'EOF2'
 
@@ -93,11 +93,11 @@ jobs:
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/apksigner" verify --print-certs "$APK" | tee cert.txt
           grep -qi "SHA-256 digest: 1ea6d3cb52a16ffb4b83b422d54a350db51fe05f501c1283c9b935f949010947" cert.txt || { echo "::error::A assinatura do APK nao e a fixa. Confira se o overlay/debug.keystore e o mesmo que foi enviado."; exit 1; }
-          echo "Versao 4.8 (build ${{ github.run_number }}) assinada com a chave fixa."
+          echo "Versao 4.9 (build ${{ github.run_number }}) assinada com a chave fixa."
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Minerador-APK-v4.8-build${{ github.run_number }}
+          name: Minerador-APK-v4.9-build${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -106,7 +106,7 @@ jobs:
         run: |
           set -e
           mkdir -p /tmp/pub && cd /tmp/pub
-          cp "$GITHUB_WORKSPACE/android/app/build/outputs/apk/debug/app-debug.apk" Minerador-v4.8.apk
+          cp "$GITHUB_WORKSPACE/android/app/build/outputs/apk/debug/app-debug.apk" Minerador-v4.9.apk
           printf 'status=ok\nsha=%s\nrun=%s\n' "${{ github.sha }}" "${{ github.run_number }}" > BUILD.txt
           git init -q -b apk
           git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
